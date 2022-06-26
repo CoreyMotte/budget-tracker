@@ -7,33 +7,62 @@ const FILES_TO_CACHE = [
     "/css/styles.css",
     "/icons/icon-192x192.png",
     "/icons/icon-512x512.png",
+    "/js/idb.js",
+    "/js/index.js",
+    ""
 ];
-const BUDGET_CACHE = 'budget-cache-v1';
+const CACHE_NAME = 'budget-cache-v1';
+const DATA_CACHE_NAME = 'data-cache-v1';
 
 self.addEventListener('install', function (e) {
     e.waitUntil(
-        caches.open(BUDGET_CACHE).then(function(cache) {
-            console.log('installing cache: ' + BUDGET_CACHE)
+        caches.open(CACHE_NAME).then(function (cache) {
+            console.log('installing cache: ' + CACHE_NAME)
             return cache.addAll(FILES_TO_CACHE)
         })
-    )
+    );
+    self.skipWaiting();
 });
 
 self.addEventListener('activate', function (e) {
     e.waitUntil(
-        caches.keys().then(function (keyList) {
-            let cacheKeeplist = keyList.filter(function (key) {
-                return key.indexOf(APP_PREFIX);
-            });
-            cacheKeeplist.push(BUDGET_CACHE);
-
+        caches.keys().then(keyList => {
             return Promise.all(
-                keyList.map(function(key, i) {
-                    if (cacheKeeplist.indexOf(key) === -1) {
-                        return caches.delete(keyList[i]);
+                keyList.map(key => {
+                    if (key !== CACHE_NAME && key !== DATA_CACHE_NAME) {
+                        console.log("Removing old cache data", key);
+                        return caches.delete(key);
                     }
                 })
             )
+        })
+    )
+    self.clients.claim();
+})
+
+self.addEventListener('fetch', function (e) {
+    if (e.request.url.includes("/api/")) {
+        e.respondWith(
+            caches.open(DATA_CACHE_NAME).then(cache => {
+                return fetch(e.request)
+                    .then(response => {
+                        if (response.status === 200) {
+                            cache.put(e.request.url, response.clone());
+                        }
+                        return response;
+                    })
+                    .catch(err => {
+                        return cache.match(e.request);
+                    });
+            }).catch(err => console.log(err))
+        );
+        return;
+    }
+    e.respondWith(
+        caches.open(CACHE_NAME).then(cache => {
+            return cache.match(e.request).then(response => {
+                return response || fetch(e.request);
+            })
         })
     )
 })
